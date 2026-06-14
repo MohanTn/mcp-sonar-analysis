@@ -1,4 +1,5 @@
-import { sep } from 'node:path';
+import { sep, relative } from 'node:path';
+import type { FileLanguage } from '../types.js';
 
 /**
  * Returns true if `child` is `parent` itself or a path nested inside
@@ -19,4 +20,26 @@ export function isPathInside(child: string, parent: string): boolean {
   }
   const parentWithSep = parent.endsWith(sep) ? parent : parent + sep;
   return child.startsWith(parentWithSep);
+}
+
+/** Resolve a (possibly absolute or outside-repo) path to a repo-relative path. */
+export function normalizeRelFilePath(filePath: string, repoRoot: string): string {
+  if (isPathInside(filePath, repoRoot)) {
+    return relative(repoRoot, filePath);
+  }
+  if (filePath.startsWith('/')) {
+    return filePath.slice(1);
+  }
+  return filePath;
+}
+
+/** Determine the analyzer language from a repo-relative file path's extension. */
+export function detectLanguage(relFilePath: string): FileLanguage {
+  if (relFilePath.endsWith('.ts') || relFilePath.endsWith('.tsx')) {
+    return 'typescript';
+  }
+  if (relFilePath.endsWith('.cs')) {
+    return 'csharp';
+  }
+  return 'unknown';
 }
