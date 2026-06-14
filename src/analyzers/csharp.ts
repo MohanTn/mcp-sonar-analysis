@@ -367,26 +367,24 @@ export async function runCsharpAnalyzer(
 /**
  * Run C# analyzer on the .csproj containing the given file.
  * For a single file analysis, we need to identify its containing project and run the build for that project only.
+ *
+ * Returns `issuesByFile` (not a flattened array) so callers can pick out the
+ * issues belonging to the specific file they're analyzing — a `dotnet build`
+ * of a project produces diagnostics for ALL files in that project, and
+ * `analyse_file` must only persist issues for the single requested file
+ * (per PRD M4: "upserts fresh results... replacing prior rows for that file").
  */
 export async function runCsharpAnalyzerForFile(
   csprojPath: string,
   repoRoot: string,
-): Promise<{ issues: Issue[]; errors: string[] }> {
+): Promise<{ issuesByFile: Map<string, Issue[]>; errors: string[] }> {
   const dotnetAvailable = await isDotnetAvailable();
   if (!dotnetAvailable) {
     return {
-      issues: [],
+      issuesByFile: new Map(),
       errors: ['dotnet SDK not found on PATH — skipping C# analysis (S3 graceful degradation)'],
     };
   }
 
-  const { issuesByFile, errors } = await buildProjectAndParseSarif(csprojPath, repoRoot);
-
-  // Flatten all issues from all files in the project
-  const allIssues: Issue[] = [];
-  for (const issues of issuesByFile.values()) {
-    allIssues.push(...issues);
-  }
-
-  return { issues: allIssues, errors };
+  return buildProjectAndParseSarif(csprojPath, repoRoot);
 }

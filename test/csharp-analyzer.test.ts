@@ -316,13 +316,13 @@ class Program { }`,
   }
 });
 
-test('runCsharpAnalyzerForFile: returns empty issues array when dotnet unavailable', async () => {
+test('runCsharpAnalyzerForFile: returns empty issuesByFile map when dotnet unavailable', async () => {
   const csprojPath = resolve(fixtureDir, 'CsSample.csproj');
   const result = await runCsharpAnalyzerForFile(csprojPath, fixtureDir);
 
-  assert.ok(Array.isArray(result.issues), 'Should return issues array');
+  assert.ok(result.issuesByFile instanceof Map, 'Should return issuesByFile as a Map');
   assert.ok(Array.isArray(result.errors), 'Should return errors array');
-  assert.equal(result.issues.length, 0, 'Should have no issues when dotnet is unavailable');
+  assert.equal(result.issuesByFile.size, 0, 'Should have no per-file issues when dotnet is unavailable');
   assert.ok(
     result.errors.length > 0,
     'Should have errors explaining why analysis was skipped',
