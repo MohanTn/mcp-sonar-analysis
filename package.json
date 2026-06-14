@@ -17,7 +17,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp -r src/dashboard/public dist/dashboard/public",
     "lint": "eslint . --ext .ts",
     "test": "node --import tsx --test test/**/*.test.ts",
     "prepublishOnly": "npm run build"

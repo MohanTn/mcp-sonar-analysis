@@ -3,16 +3,38 @@
  * Tests: register-repo, analyse-repo, get-file-analysis, analyse-file, serve.
  */
 
-import { test, describe, before } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { promises as fs } from 'node:fs';
+import { promises as fs, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
+
+// Isolate the global dashboard registry for the whole file: the CLI's
+// register-repo command (and registerRepo internally) upserts into
+// ~/.mcp-sonar-analysis/registry.json by default. Point
+// MCP_SONAR_DASHBOARD_HOME at a throwaway directory and pass it through to
+// every spawned CLI subprocess so test runs never touch the real registry.
+let dashboardHomeDir: string;
+let previousDashboardHomeOverride: string | undefined;
+
+before(() => {
+  previousDashboardHomeOverride = process.env.MCP_SONAR_DASHBOARD_HOME;
+  dashboardHomeDir = mkdtempSync(join(tmpdir(), 'mcp-sonar-cli-test-registry-'));
+});
+
+after(() => {
+  if (previousDashboardHomeOverride === undefined) {
+    delete process.env.MCP_SONAR_DASHBOARD_HOME;
+  } else {
+    process.env.MCP_SONAR_DASHBOARD_HOME = previousDashboardHomeOverride;
+  }
+  rmSync(dashboardHomeDir, { recursive: true, force: true });
+});
 
 async function runCommand(
   ...args: string[]
@@ -21,7 +43,9 @@ async function runCommand(
     const { stdout, stderr } = await execFileAsync('node', [
       resolve('./dist/cli.js'),
       ...args,
-    ]);
+    ], {
+      env: { ...process.env, MCP_SONAR_DASHBOARD_HOME: dashboardHomeDir },
+    });
     return { stdout, stderr, exitCode: 0 };
   } catch (error: unknown) {
     const execError = error as { stdout?: string; stderr?: string; code?: number };
@@ -227,6 +251,7 @@ describe('CLI and MCP server', () => {
   test('serve: responds to tools/list with exactly 4 tools matching the contracts', async () => {
     const childProcess = spawn('node', [resolve('./dist/cli.js'), 'serve'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, MCP_SONAR_DASHBOARD_HOME: dashboardHomeDir },
     });
 
     try {

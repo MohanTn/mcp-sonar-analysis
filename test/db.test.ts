@@ -17,6 +17,9 @@ import {
   getReverseDependencies,
   recordAnalysisRun,
   countIssuesByType,
+  countIssuesBySeverity,
+  countIssuesByTypeAndSeverity,
+  listFilesWithIssueCounts,
   countDependencies,
   hasFileBeenAnalyzed,
 } from '../src/db/queries.js';
@@ -223,5 +226,105 @@ test('file_issues type CHECK constraint rejects invalid type', () => {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(repo.id, 'x.ts', 'S1', 'NOT_A_TYPE', 'MAJOR', 1, 1);
   }, /CHECK constraint failed/);
+  db.close();
+});
+
+test('countIssuesBySeverity aggregates correctly across severities with zero cells', () => {
+  const db = new Database(':memory:');
+  initSchema(db);
+  const repo = insertRepo(db, '/severity/repo');
+
+  upsertFileIssues(db, repo.id, 'a.ts', [
+    { ruleId: 'S1', type: 'BUG', severity: 'INFO', line: 1, column: 1 },
+    { ruleId: 'S2', type: 'CODE_SMELL', severity: 'MINOR', line: 2, column: 1 },
+    { ruleId: 'S3', type: 'BUG', severity: 'MAJOR', line: 3, column: 1 },
+  ]);
+  upsertFileIssues(db, repo.id, 'b.ts', [
+    { ruleId: 'S4', type: 'VULNERABILITY', severity: 'CRITICAL', line: 1, column: 1 },
+    { ruleId: 'S5', type: 'SECURITY_HOTSPOT', severity: 'BLOCKER', line: 2, column: 1 },
+  ]);
+
+  const counts = countIssuesBySeverity(db, repo.id);
+  assert.equal(counts.INFO, 1);
+  assert.equal(counts.MINOR, 1);
+  assert.equal(counts.MAJOR, 1);
+  assert.equal(counts.CRITICAL, 1);
+  assert.equal(counts.BLOCKER, 1);
+  db.close();
+});
+
+test('countIssuesByTypeAndSeverity returns full 4×5 matrix with correct counts and zero cells', () => {
+  const db = new Database(':memory:');
+  initSchema(db);
+  const repo = insertRepo(db, '/matrix/repo');
+
+  upsertFileIssues(db, repo.id, 'a.ts', [
+    { ruleId: 'S1', type: 'BUG', severity: 'MAJOR', line: 1, column: 1 },
+    { ruleId: 'S2', type: 'BUG', severity: 'MAJOR', line: 2, column: 1 },
+    { ruleId: 'S3', type: 'BUG', severity: 'MINOR', line: 3, column: 1 },
+  ]);
+  upsertFileIssues(db, repo.id, 'b.ts', [
+    { ruleId: 'S4', type: 'CODE_SMELL', severity: 'MINOR', line: 1, column: 1 },
+    { ruleId: 'S5', type: 'CODE_SMELL', severity: 'MINOR', line: 2, column: 1 },
+  ]);
+  upsertFileIssues(db, repo.id, 'c.ts', [
+    { ruleId: 'S6', type: 'SECURITY_HOTSPOT', severity: 'CRITICAL', line: 1, column: 1 },
+  ]);
+
+  const matrix = countIssuesByTypeAndSeverity(db, repo.id);
+
+  // Verify counts for cells with issues
+  assert.equal(matrix.BUG.MAJOR, 2);
+  assert.equal(matrix.BUG.MINOR, 1);
+  assert.equal(matrix.CODE_SMELL.MINOR, 2);
+  assert.equal(matrix.SECURITY_HOTSPOT.CRITICAL, 1);
+
+  // Verify at least one zero cell is explicitly 0, not undefined
+  assert.equal(matrix.VULNERABILITY.BLOCKER, 0);
+  assert.equal(matrix.BUG.INFO, 0);
+  assert.equal(matrix.CODE_SMELL.BLOCKER, 0);
+
+  // Verify all cells exist (4 types × 5 severities)
+  assert.ok(matrix.BUG);
+  assert.ok(matrix.VULNERABILITY);
+  assert.ok(matrix.CODE_SMELL);
+  assert.ok(matrix.SECURITY_HOTSPOT);
+  assert.equal(Object.keys(matrix.BUG).length, 5);
+  assert.equal(Object.keys(matrix.VULNERABILITY).length, 5);
+  assert.equal(Object.keys(matrix.CODE_SMELL).length, 5);
+  assert.equal(Object.keys(matrix.SECURITY_HOTSPOT).length, 5);
+
+  db.close();
+});
+
+test('listFilesWithIssueCounts returns files sorted by issue count descending', () => {
+  const db = new Database(':memory:');
+  initSchema(db);
+  const repo = insertRepo(db, '/files/repo');
+
+  upsertFileIssues(db, repo.id, 'src/a.ts', [
+    { ruleId: 'S1', type: 'BUG', severity: 'MAJOR', line: 1, column: 1 },
+    { ruleId: 'S2', type: 'CODE_SMELL', severity: 'MINOR', line: 2, column: 1 },
+    { ruleId: 'S3', type: 'BUG', severity: 'MAJOR', line: 3, column: 1 },
+  ]);
+  upsertFileIssues(db, repo.id, 'src/b.ts', [
+    { ruleId: 'S4', type: 'VULNERABILITY', severity: 'CRITICAL', line: 1, column: 1 },
+  ]);
+  upsertFileIssues(db, repo.id, 'src/c.ts', [
+    { ruleId: 'S5', type: 'SECURITY_HOTSPOT', severity: 'BLOCKER', line: 1, column: 1 },
+    { ruleId: 'S6', type: 'BUG', severity: 'INFO', line: 2, column: 1 },
+  ]);
+
+  const files = listFilesWithIssueCounts(db, repo.id);
+  assert.equal(files.length, 3);
+
+  // Sort order: a.ts (3 issues), c.ts (2 issues), b.ts (1 issue)
+  assert.equal(files[0].filePath, 'src/a.ts');
+  assert.equal(files[0].issueCount, 3);
+  assert.equal(files[1].filePath, 'src/c.ts');
+  assert.equal(files[1].issueCount, 2);
+  assert.equal(files[2].filePath, 'src/b.ts');
+  assert.equal(files[2].issueCount, 1);
+
   db.close();
 });

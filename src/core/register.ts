@@ -4,8 +4,9 @@
  */
 
 import { resolve } from 'node:path';
-import { openDb } from '../db/connection.js';
+import { openDb, getDbPath } from '../db/connection.js';
 import { findRepoByPath, insertRepo } from '../db/queries.js';
+import { upsertRegistryEntry } from '../dashboard/registry.js';
 import type { RegisterRepoOutput } from '../types.js';
 
 export async function registerRepo(repoPath: string, name?: string): Promise<RegisterRepoOutput> {
@@ -19,6 +20,15 @@ export async function registerRepo(repoPath: string, name?: string): Promise<Reg
     // Check if already registered
     const existing = findRepoByPath(db, canonicalPath);
     if (existing) {
+      // Upsert to global registry (self-healing for pre-feature repos)
+      upsertRegistryEntry({
+        repoId: existing.id,
+        path: existing.path,
+        name: existing.name,
+        dbPath: getDbPath(canonicalPath),
+        registeredAt: existing.registeredAt,
+      });
+
       return {
         repoId: existing.id,
         path: existing.path,
@@ -30,6 +40,16 @@ export async function registerRepo(repoPath: string, name?: string): Promise<Reg
 
     // New registration
     const created = insertRepo(db, canonicalPath, name);
+
+    // Upsert to global registry
+    upsertRegistryEntry({
+      repoId: created.id,
+      path: created.path,
+      name: created.name,
+      dbPath: getDbPath(canonicalPath),
+      registeredAt: created.registeredAt,
+    });
+
     return {
       repoId: created.id,
       path: created.path,

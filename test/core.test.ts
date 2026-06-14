@@ -3,7 +3,7 @@
  * Tests the four main tool implementations with a combined fixture repo.
  */
 
-import { test } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { mkdtempSync, rmSync, cpSync } from 'node:fs';
@@ -13,6 +13,29 @@ import { analyseRepo } from '../src/core/analyseRepo.js';
 import { getFileAnalysis } from '../src/core/getFileAnalysis.js';
 import { analyseFile } from '../src/core/analyseFile.js';
 import { openDb } from '../src/db/connection.js';
+import { readRegistry } from '../src/dashboard/registry.js';
+
+// Isolate the global dashboard registry for the whole file: every
+// registerRepo() call below would otherwise upsert into the real
+// ~/.mcp-sonar-analysis/registry.json. Point MCP_SONAR_DASHBOARD_HOME at a
+// throwaway directory for the duration of this test file.
+let dashboardHomeDir: string;
+let previousDashboardHomeOverride: string | undefined;
+
+before(() => {
+  previousDashboardHomeOverride = process.env.MCP_SONAR_DASHBOARD_HOME;
+  dashboardHomeDir = mkdtempSync(resolve(tmpdir(), 'mcp-sonar-core-test-registry-'));
+  process.env.MCP_SONAR_DASHBOARD_HOME = dashboardHomeDir;
+});
+
+after(() => {
+  if (previousDashboardHomeOverride === undefined) {
+    delete process.env.MCP_SONAR_DASHBOARD_HOME;
+  } else {
+    process.env.MCP_SONAR_DASHBOARD_HOME = previousDashboardHomeOverride;
+  }
+  rmSync(dashboardHomeDir, { recursive: true, force: true });
+});
 
 // Set up a combined fixture repo with both TS and C# samples
 function setupFixtureRepo(): string {
@@ -59,6 +82,49 @@ test('registerRepo: idempotent registration', async () => {
     }
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('registerRepo: writes entry to global registry on new and existing registration', async () => {
+  const tmpDir = setupFixtureRepo();
+  const registryHome = mkdtempSync(resolve(tmpdir(), 'mcp-sonar-registry-test-'));
+  const previousOverride = process.env.MCP_SONAR_DASHBOARD_HOME;
+  process.env.MCP_SONAR_DASHBOARD_HOME = registryHome;
+
+  try {
+    // First registration (new repo)
+    const result1 = await registerRepo(tmpDir, 'test-repo');
+
+    const expectedPath = resolve(tmpDir);
+    const expectedDbPath = resolve(tmpDir, '.mcp-sonar-analysis', 'db.sqlite');
+
+    assert.equal(result1.path, expectedPath, 'Registered path should match repo path');
+    assert.ok(result1.repoId > 0, 'Should have a repo ID');
+
+    // Registry entry should have been written under MCP_SONAR_DASHBOARD_HOME
+    let registry = readRegistry(registryHome);
+    const entry = registry.repos.find((r) => r.path === expectedPath);
+    assert.ok(entry, 'Registry should contain an entry for the newly registered repo');
+    assert.equal(entry?.repoId, result1.repoId);
+    assert.equal(entry?.name, 'test-repo');
+    assert.equal(entry?.dbPath, expectedDbPath);
+
+    // Second registration (already registered) — self-healing upsert, no duplicates
+    const result2 = await registerRepo(tmpDir);
+    assert.equal(result2.repoId, result1.repoId, 'Same path should return same repo ID');
+    assert.equal(result2.alreadyRegistered, true, 'Should be marked as already registered');
+
+    registry = readRegistry(registryHome);
+    const matching = registry.repos.filter((r) => r.path === expectedPath);
+    assert.equal(matching.length, 1, 'Upsert must not create duplicate registry entries');
+  } finally {
+    if (previousOverride === undefined) {
+      delete process.env.MCP_SONAR_DASHBOARD_HOME;
+    } else {
+      process.env.MCP_SONAR_DASHBOARD_HOME = previousOverride;
+    }
+    rmSync(tmpDir, { recursive: true, force: true });
+    rmSync(registryHome, { recursive: true, force: true });
   }
 });
 

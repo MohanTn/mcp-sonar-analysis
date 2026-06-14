@@ -48,6 +48,20 @@ export interface RepoRecord {
   status: RepoStatus;
 }
 
+/** An entry in the global registry (~/.mcp-sonar-analysis/registry.json). */
+export interface RegistryEntry {
+  repoId: number;
+  path: string;
+  name: string | null;
+  dbPath: string;
+  registeredAt: string;
+}
+
+/** The global registry file structure. */
+export interface RegistryFile {
+  repos: RegistryEntry[];
+}
+
 // ---------------------------------------------------------------------------
 // MCP tool / CLI I/O contracts (PRD.md §6.4)
 // ---------------------------------------------------------------------------

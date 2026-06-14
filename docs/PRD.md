@@ -111,7 +111,7 @@ When Claude Code edits a TS/TSX or C# file, it has **zero awareness of static-an
 ### WON'T HAVE (explicit v1 exclusions)
 
 - **W1.** No languages other than TypeScript/TSX and C# (no Python, Java, Go, plain `.js`/`.jsx` as a target — only `.ts`/`.tsx`/`.cs` are discovered/analyzed).
-- **W2.** No web UI or dashboard.
+- **W2.** No web UI or dashboard. *(Superseded for this v1 surface only — a separate, purely additive local dashboard was added as a fast-follow; see `docs/PRD-dashboard.md`. It does not change `serve`, the 4 MCP tools, or any v1 schema/behavior described in this document.)*
 - **W3.** No CI/CD pipeline integration.
 - **W4.** No SonarQube Server/Cloud connectivity, accounts, or tokens.
 - **W5.** No multi-user/auth/sharing — SQLite DB is a single local file, single-user.
@@ -141,7 +141,7 @@ When Claude Code edits a TS/TSX or C# file, it has **zero awareness of static-an
 - No SonarQube Server/Community Build/Cloud support — no connection to, or requirement of, any SonarQube server instance.
 - No Docker dependency of any kind.
 - No languages beyond TypeScript, TSX, and C# in this version.
-- No web UI, dashboard, or visualization layer.
+- No web UI, dashboard, or visualization layer. *(See note on W2 above — a read-only local dashboard was added as an additive fast-follow; this v1 contract is otherwise unchanged.)*
 - No authentication, multi-user accounts, or shared/remote state.
 - No CI/CD integration.
 - No taint-analysis / cross-procedure security analysis beyond what `eslint-plugin-sonarjs` and `SonarAnalyzer.CSharp` provide standalone.

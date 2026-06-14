@@ -16,6 +16,7 @@ with results cached in a per-repo SQLite database. Licensed under MIT.
 - **SonarQube rule compatibility**: Detect BUGs, VULNERABILITIES, CODE_SMELL, and SECURITY_HOTSPOT issues
 - **MCP integration**: Use as an MCP server in Claude Code for seamless analysis workflows
 - **CLI support**: Command-line interface for automation and scripting
+- **Local web dashboard**: Browse cross-repo issue counts and drill into per-file results in your browser (localhost-only)
 
 ## Installation
 
@@ -179,6 +180,37 @@ mcp-sonar-analysis-cli serve
 
 The server listens on stdin/stdout using the MCP stdio transport and responds to JSON-RPC 2.0 requests from Claude Code.
 
+### Start the dashboard
+
+```bash
+mcp-sonar-analysis-cli dashboard [--port <n>]
+```
+
+Starts a local, read-only web dashboard bound to `127.0.0.1` only (default
+port `4319`). It lists every repo you've registered (via `register_repo` or
+`register-repo`), with issue counts by type, and lets you drill into a
+per-repo summary (type/severity breakdowns, type×severity matrix, file list)
+and a per-file view (issues, dependencies) — the same data exposed by
+`get-file-analysis`.
+
+```
+Dashboard running at http://127.0.0.1:4319
+```
+
+- Press `Ctrl+C` to stop it (runs in the foreground, like `serve`).
+- If the port is already in use, the command exits with status 1 and prints
+  `Port <n> already in use. Try --port <different-port>.` — it does not
+  auto-increment or retry.
+- The dashboard reads from each repo's existing
+  `<repoRoot>/.mcp-sonar-analysis/db.sqlite` plus a small global registry at
+  `~/.mcp-sonar-analysis/registry.json` (a list of `{ path, name, dbPath,
+  registeredAt }` entries, written automatically whenever a repo is
+  registered). It is entirely separate from `serve` — starting/stopping the
+  dashboard never affects the MCP server or the 4 MCP tools.
+- Repos whose directory no longer exists on disk are shown with a "stale"
+  badge instead of being hidden or erroring.
+- Refresh is manual (a "Refresh" button per view) — there is no live polling.
+
 ## Claude Code Hooks Integration
 
 The project includes example hook scripts in `.claude/hooks/` that automate analysis:
@@ -279,6 +311,11 @@ The hooks output additional context (as `additionalContext` in the hook response
 │   │   ├── csharp.ts                 # C# Roslyn analyzer
 │   │   ├── dependency-graph-ts.ts    # TS import graph
 │   │   └── dependency-graph-cs.ts    # C# using directive graph
+│   ├── dashboard/
+│   │   ├── server.ts                 # Dashboard HTTP server (127.0.0.1 only)
+│   │   ├── api.ts                    # /api/* route handlers
+│   │   ├── registry.ts               # Global ~/.mcp-sonar-analysis/registry.json
+│   │   └── public/                   # Static frontend (HTML/JS/CSS)
 │   ├── db/
 │   │   ├── connection.ts             # SQLite connection
 │   │   └── queries.ts                # Database operations
@@ -286,6 +323,8 @@ The hooks output additional context (as `additionalContext` in the hook response
 ├── test/
 │   ├── cli.test.ts                   # End-to-end CLI tests
 │   ├── core.test.ts                  # Core logic tests
+│   ├── dashboard.test.ts             # Dashboard server/API tests
+│   ├── registry.test.ts              # Registry module tests
 │   └── fixtures/ts-sample/           # Test fixture
 ├── .claude/
 │   ├── hooks/                        # Example Claude Code hooks

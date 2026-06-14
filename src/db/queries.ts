@@ -195,6 +195,74 @@ export function countIssuesByType(
   return result;
 }
 
+// --- dashboard aggregation helpers ---
+
+/**
+ * Returns issue counts aggregated by severity for a given repo.
+ * Initializes all 5 severity levels at 0, then populates from query results.
+ */
+export function countIssuesBySeverity(
+  db: Database.Database,
+  repoId: number,
+): Record<IssueSeverity, number> {
+  const rows = db
+    .prepare('SELECT severity, COUNT(*) as cnt FROM file_issues WHERE repo_id = ? GROUP BY severity')
+    .all(repoId) as Array<{ severity: IssueSeverity; cnt: number }>;
+  const result: Record<IssueSeverity, number> = {
+    INFO: 0,
+    MINOR: 0,
+    MAJOR: 0,
+    CRITICAL: 0,
+    BLOCKER: 0,
+  };
+  for (const row of rows) {
+    result[row.severity] = row.cnt;
+  }
+  return result;
+}
+
+/**
+ * Returns a 4×5 matrix of issue counts aggregated by type and severity.
+ * Single query with GROUP BY type, severity. Result initialized with all
+ * type×severity combinations at 0, then populated from query results.
+ * Every cell is guaranteed to be a number (0 if no matching issues).
+ */
+export function countIssuesByTypeAndSeverity(
+  db: Database.Database,
+  repoId: number,
+): Record<IssueType, Record<IssueSeverity, number>> {
+  const rows = db
+    .prepare('SELECT type, severity, COUNT(*) as cnt FROM file_issues WHERE repo_id = ? GROUP BY type, severity')
+    .all(repoId) as Array<{ type: IssueType; severity: IssueSeverity; cnt: number }>;
+  const result: Record<IssueType, Record<IssueSeverity, number>> = {
+    BUG: { INFO: 0, MINOR: 0, MAJOR: 0, CRITICAL: 0, BLOCKER: 0 },
+    VULNERABILITY: { INFO: 0, MINOR: 0, MAJOR: 0, CRITICAL: 0, BLOCKER: 0 },
+    CODE_SMELL: { INFO: 0, MINOR: 0, MAJOR: 0, CRITICAL: 0, BLOCKER: 0 },
+    SECURITY_HOTSPOT: { INFO: 0, MINOR: 0, MAJOR: 0, CRITICAL: 0, BLOCKER: 0 },
+  };
+  for (const row of rows) {
+    result[row.type][row.severity] = row.cnt;
+  }
+  return result;
+}
+
+/**
+ * Returns a list of files in the repo with their issue counts,
+ * sorted by issue count descending.
+ */
+export function listFilesWithIssueCounts(
+  db: Database.Database,
+  repoId: number,
+): Array<{ filePath: string; issueCount: number }> {
+  const rows = db
+    .prepare('SELECT file_path, COUNT(*) as cnt FROM file_issues WHERE repo_id = ? GROUP BY file_path ORDER BY cnt DESC')
+    .all(repoId) as Array<{ file_path: string; cnt: number }>;
+  return rows.map((row) => ({
+    filePath: row.file_path,
+    issueCount: row.cnt,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // file_dependencies
 // ---------------------------------------------------------------------------

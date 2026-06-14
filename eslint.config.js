@@ -20,6 +20,12 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'test/fixtures/**', '.mcp-sonar-analysis/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'test/fixtures/**',
+      '.mcp-sonar-analysis/**',
+      'src/dashboard/public/**',
+    ],
   },
 );

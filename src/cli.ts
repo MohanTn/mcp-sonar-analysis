@@ -111,4 +111,24 @@ program
     }
   });
 
+// dashboard: start local web dashboard
+program
+  .command('dashboard')
+  .description('Start the local web dashboard (http://127.0.0.1, read-only)')
+  .option('--port <n>', 'HTTP port', '4319')
+  .action(async (options) => {
+    try {
+      const port = Number(options.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        outputError(`Invalid port: ${options.port}`);
+        return;
+      }
+      const { startDashboardServer } = await import('./dashboard/server.js');
+      await startDashboardServer(port);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      outputError(message);
+    }
+  });
+
 program.parse(process.argv);
