@@ -217,3 +217,13 @@ Two real-but-edge-case path-prefix bugs (Bug #1, Bug #2) exist in directory-ance
 Given these are pre-existing-pattern issues repeated across phases rather than one-off mistakes, and given they don't manifest in the tested/primary-use-case paths, this does not rise to REJECTED — but it should not be waved through silently either. **Recommended follow-up** (non-blocking for this pass, but should be tracked): introduce a shared `isPathInside(parent, child)` / `toRepoRelative(repoRoot, absPath)` helper and apply it at the 8 call sites identified in Bug #1 plus the `findContainingCsproj` ancestor check in Bug #2.
 
 No other REAL bugs found. SQL layer, upsert semantics, S1 incremental logic, S3 degradation, MCP/CLI contracts, and hook integration are all correctly implemented and match both PRD.md and the codebase's stated conventions.
+
+---
+
+## UPDATE: Bugs #1 and #2 fixed (commit e511748)
+
+A shared `src/util/paths.ts` helper `isPathInside(child, parent)` (separator-aware, handles `child === parent`, nested children, and the `/repo/Foo` vs `/repo/FooBar` sibling-collision case) was added and applied at all 9 affected call sites across `src/core/analyseRepo.ts`, `src/core/analyseFile.ts` (including `findContainingCsproj`), and `src/core/getFileAnalysis.ts`. Dedicated unit tests in `test/paths.test.ts` (5 new tests, including the exact collision scenario) were added.
+
+A focused re-review confirmed: all 9 sites converted, no raw unsafe `startsWith(repo...)`/`startsWith(csprojDir)` ancestry checks remain, no lint-adjacent fallout (unused imports), and the full suite passes at 62/62 (up from 57/57).
+
+**FINAL VERDICT: APPROVED** — all comments from the initial review have been resolved.
