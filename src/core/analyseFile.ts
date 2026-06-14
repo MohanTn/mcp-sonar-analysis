@@ -12,6 +12,7 @@ import { runTsDependencyGraph } from '../analyzers/dependency-graph-ts.js';
 import { findCsprojFiles, runCsharpAnalyzerForFile } from '../analyzers/csharp.js';
 import { runCsDependencyGraph } from '../analyzers/dependency-graph-cs.js';
 import { getFileAnalysis } from './getFileAnalysis.js';
+import { isPathInside } from '../util/paths.js';
 import type { AnalyseFileOutput, FileLanguage, IssueSeverity, IssueType, RepoRecord, Issue, DependencyEdge } from '../types.js';
 
 /**
@@ -30,8 +31,8 @@ async function findContainingCsproj(absFilePath: string, repoRoot: string): Prom
 
   for (const csproj of csprojPaths) {
     const csprojDir = dirname(csproj);
-    // Check if csprojDir is an ancestor of fileDir
-    if (fileDir.startsWith(csprojDir)) {
+    // Check if csprojDir is an ancestor of (or equal to) fileDir
+    if (isPathInside(fileDir, csprojDir)) {
       const depth = csprojDir.split('/').length;
       if (depth > closestDepth) {
         closest = csproj;
@@ -83,7 +84,7 @@ export async function analyseFile(
     const repoResolved: RepoRecord = repo;
 
     // Normalize file path to repo-relative and absolute
-    const relFilePath = filePath.startsWith(repoResolved.path)
+    const relFilePath = isPathInside(filePath, repoResolved.path)
       ? relative(repoResolved.path, filePath)
       : filePath.startsWith('/')
         ? filePath.slice(1)
@@ -115,7 +116,7 @@ export async function analyseFile(
           sourceRel = relative(repoResolved.path, sourceRel);
         } else {
           const possibleAbs = resolve(sourceRel);
-          if (possibleAbs.startsWith(repoResolved.path)) {
+          if (isPathInside(possibleAbs, repoResolved.path)) {
             sourceRel = relative(repoResolved.path, possibleAbs);
           }
         }
@@ -126,7 +127,7 @@ export async function analyseFile(
             importedRel = relative(repoResolved.path, importedRel);
           } else {
             const possibleAbs = resolve(importedRel);
-            if (possibleAbs.startsWith(repoResolved.path)) {
+            if (isPathInside(possibleAbs, repoResolved.path)) {
               importedRel = relative(repoResolved.path, possibleAbs);
             }
           }
@@ -155,7 +156,7 @@ export async function analyseFile(
         // or absolute depending on the toolchain, so match defensively by
         // comparing normalized (repo-relative) paths.
         for (const [sarifPath, fileIssues] of issuesByFile) {
-          const normalizedSarifPath = sarifPath.startsWith(repoResolved.path)
+          const normalizedSarifPath = isPathInside(sarifPath, repoResolved.path)
             ? relative(repoResolved.path, sarifPath)
             : sarifPath.replace(/^\/+/, '');
           if (normalizedSarifPath === relFilePath || sarifPath === absFilePath) {

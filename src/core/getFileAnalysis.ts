@@ -6,6 +6,7 @@
 import { resolve, relative } from 'node:path';
 import { openDb } from '../db/connection.js';
 import { findRepoById, findRepoByPath, getFileIssues, getFileDependencies, getReverseDependencies, hasFileBeenAnalyzed } from '../db/queries.js';
+import { isPathInside } from '../util/paths.js';
 import type { GetFileAnalysisOutput, FileLanguage, IssueSeverity, IssueType, RepoRecord } from '../types.js';
 
 export async function getFileAnalysis(
@@ -40,7 +41,7 @@ export async function getFileAnalysis(
     }
 
     // Normalize file path to repo-relative
-    const relFilePath = filePath.startsWith(repo.path)
+    const relFilePath = isPathInside(filePath, repo.path)
       ? relative(repo.path, filePath)
       : filePath.startsWith('/')
         ? filePath.slice(1)

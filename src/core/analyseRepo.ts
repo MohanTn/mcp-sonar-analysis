@@ -12,6 +12,7 @@ import { runTypeScriptAnalyzer } from '../analyzers/typescript.js';
 import { runTsDependencyGraph } from '../analyzers/dependency-graph-ts.js';
 import { findCsprojFiles, runCsharpAnalyzer } from '../analyzers/csharp.js';
 import { runCsDependencyGraph } from '../analyzers/dependency-graph-cs.js';
+import { isPathInside } from '../util/paths.js';
 import type { AnalyseRepoOutput, RepoRecord } from '../types.js';
 
 export async function analyseRepo(
@@ -156,7 +157,7 @@ export async function analyseRepo(
           // Relative path - likely cwd-relative from dependency-cruiser
           // Try to resolve it relative to repo and then make it repo-relative
           const possibleAbs = resolve(sourceRel);
-          if (possibleAbs.startsWith(repo.path)) {
+          if (isPathInside(possibleAbs, repo.path)) {
             sourceRel = relative(repo.path, possibleAbs);
           }
         }
@@ -167,7 +168,7 @@ export async function analyseRepo(
             importedRel = relative(repo.path, importedRel);
           } else {
             const possibleAbs = resolve(importedRel);
-            if (possibleAbs.startsWith(repo.path)) {
+            if (isPathInside(possibleAbs, repo.path)) {
               importedRel = relative(repo.path, possibleAbs);
             }
           }
@@ -213,7 +214,7 @@ export async function analyseRepo(
           // Upsert C# issues (normalize keys if needed)
           for (const [filePath, issues] of issuesByFile) {
             // Normalize file path to repo-relative
-            const relPath = filePath.startsWith(repo.path)
+            const relPath = isPathInside(filePath, repo.path)
               ? relative(repo.path, filePath)
               : filePath.startsWith('/')
                 ? filePath.slice(1)
