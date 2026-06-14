@@ -48,6 +48,13 @@ CREATE TABLE IF NOT EXISTS file_dependencies (
 CREATE INDEX IF NOT EXISTS idx_deps_source ON file_dependencies(repo_id, source_file);
 CREATE INDEX IF NOT EXISTS idx_deps_imported ON file_dependencies(repo_id, imported_file);
 
+CREATE TABLE IF NOT EXISTS file_mtimes (
+  repo_id INTEGER NOT NULL REFERENCES analysis_repo(id) ON DELETE CASCADE,
+  file_path TEXT NOT NULL,
+  mtime_ms INTEGER NOT NULL,
+  PRIMARY KEY (repo_id, file_path)
+);
+
 CREATE TABLE IF NOT EXISTS analysis_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id INTEGER NOT NULL REFERENCES analysis_repo(id) ON DELETE CASCADE,

@@ -109,6 +109,13 @@ mcp-sonar-analysis-cli analyse-repo 1
 }
 ```
 
+**Incremental analysis**: `analyse-repo` tracks each file's mtime and skips
+re-running the (relatively expensive) ESLint/`dotnet build` analysis for
+files that haven't changed since the last run — their previously persisted
+issues are left untouched. Dependency-graph analysis still runs over the
+full file set each time (it's cheap and graph-wide). Pass `--force` to
+bypass this and re-analyze every file regardless of mtime.
+
 ### Get file analysis
 
 ```bash
@@ -301,7 +308,35 @@ The hooks output additional context (as `additionalContext` in the hook response
 
 ## Future Work
 
-See Phase 6 notes for planned enhancements.
+The following "should-have" items from the PRD were evaluated for this
+release:
+
+- **S1 — Incremental re-analysis (mtime-based)**: implemented. `analyse_repo`
+  skips re-running issue analysis for files whose mtime hasn't changed since
+  the last run; `--force` bypasses this.
+- **S2 — Severity/type filtering**: implemented. `get_file_analysis` and
+  `analyse_file` accept optional `type` and `severity` filters.
+- **S3 — Graceful `dotnet`-absent degradation**: implemented. Repos with no
+  `dotnet` SDK on `PATH` complete `analyse_repo`/`analyse_file` with a clear
+  `errors` entry instead of failing.
+- **S4 — Config file (`.mcp-sonar-analysis.json`)** for excluding paths
+  beyond `.gitignore` defaults and pinning rule severity overrides: **deferred**.
+  Not implemented in this release; the current exclude list
+  (`node_modules`, `bin`, `obj`, `dist`, `build`, `.git`,
+  `.mcp-sonar-analysis`, plus `.gitignore` entries) is hardcoded in
+  `src/core/analyseRepo.ts`. A future release could add a JSON config file
+  (consistent with the rest of the Node tooling) for custom excludes and
+  per-rule severity overrides.
+
+### Other known limitations (carried from the PRD's open items)
+
+- The C# dependency graph (`src/analyzers/dependency-graph-cs.ts`) is a
+  regex/syntax-based `using`-directive scan, not a full Roslyn semantic
+  model. It is best-effort (~85-90% accurate per the PRD) — it can miss
+  edges introduced via conditional compilation, aliasing, or dynamic
+  references.
+- Throughput targets (large-repo performance) are qualitative for v1; no
+  formal benchmarks have been established against a reference repo yet.
 
 ## License
 

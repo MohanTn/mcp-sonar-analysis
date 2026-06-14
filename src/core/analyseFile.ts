@@ -4,8 +4,9 @@
  */
 
 import { resolve, relative, dirname } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { openDb } from '../db/connection.js';
-import { findRepoById, findRepoByPath, upsertFileIssues, upsertFileDependencies, recordAnalysisRun } from '../db/queries.js';
+import { findRepoById, findRepoByPath, upsertFileIssues, upsertFileDependencies, recordAnalysisRun, setFileMtime } from '../db/queries.js';
 import { runTypeScriptAnalyzer } from '../analyzers/typescript.js';
 import { runTsDependencyGraph } from '../analyzers/dependency-graph-ts.js';
 import { findCsprojFiles, runCsharpAnalyzerForFile } from '../analyzers/csharp.js';
@@ -179,6 +180,15 @@ export async function analyseFile(
 
     // Upsert issues
     upsertFileIssues(db, repoResolved.id, relFilePath, issues);
+
+    // Record this file's current mtime (S1: keeps analyse_repo's incremental
+    // skip in sync with out-of-band single-file analyses, e.g. via hooks).
+    try {
+      const mtimeMs = (await stat(absFilePath)).mtimeMs;
+      setFileMtime(db, repoResolved.id, relFilePath, mtimeMs);
+    } catch {
+      // File may have been deleted between analysis and this point; ignore.
+    }
 
     const endTime = new Date();
     const durationMs = endTime.getTime() - startTime.getTime();

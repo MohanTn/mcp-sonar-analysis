@@ -290,6 +290,39 @@ export function countDependencies(db: Database.Database, repoId: number): number
 }
 
 // ---------------------------------------------------------------------------
+// file_mtimes (S1: incremental re-analysis)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the stored mtime (ms since epoch) for `filePath`, or `undefined`
+ * if the file has never been recorded.
+ */
+export function getFileMtime(
+  db: Database.Database,
+  repoId: number,
+  filePath: string,
+): number | undefined {
+  const row = db
+    .prepare('SELECT mtime_ms FROM file_mtimes WHERE repo_id = ? AND file_path = ?')
+    .get(repoId, filePath) as { mtime_ms: number } | undefined;
+  return row?.mtime_ms;
+}
+
+/** Upsert the stored mtime for `filePath`. */
+export function setFileMtime(
+  db: Database.Database,
+  repoId: number,
+  filePath: string,
+  mtimeMs: number,
+): void {
+  db.prepare(`
+    INSERT INTO file_mtimes (repo_id, file_path, mtime_ms)
+    VALUES (?, ?, ?)
+    ON CONFLICT(repo_id, file_path) DO UPDATE SET mtime_ms = excluded.mtime_ms
+  `).run(repoId, filePath, mtimeMs);
+}
+
+// ---------------------------------------------------------------------------
 // analysis_runs
 // ---------------------------------------------------------------------------
 

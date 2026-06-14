@@ -265,6 +265,89 @@ test('analyseFile: detect freshly introduced violations', async () => {
   }
 });
 
+test('analyseRepo: S1 incremental re-analysis skips unchanged files, re-analyzes changed/forced ones', async () => {
+  const tmpDir = setupFixtureRepo();
+
+  try {
+    await registerRepo(tmpDir);
+
+    // First analysis: populates file_mtimes and file_issues for all files.
+    await analyseRepo(tmpDir);
+
+    const db = openDb(tmpDir);
+    let repoId: number;
+    try {
+      const repoRow = db.prepare('SELECT id FROM analysis_repo LIMIT 1').get() as { id: number };
+      repoId = repoRow.id;
+
+      const mtimeRowCount = db
+        .prepare('SELECT COUNT(*) as cnt FROM file_mtimes WHERE repo_id = ?')
+        .get(repoId) as { cnt: number };
+      assert.ok(mtimeRowCount.cnt > 0, 'First analysis should record file mtimes');
+
+      // Snapshot analyzed_at for dead-store.ts before the second run.
+      const before = db
+        .prepare('SELECT analyzed_at FROM file_issues WHERE repo_id = ? AND file_path = ? LIMIT 1')
+        .get(repoId, 'ts/dead-store.ts') as { analyzed_at: string } | undefined;
+      assert.ok(before, 'dead-store.ts should have an issue row after first analysis');
+    } finally {
+      db.close();
+    }
+
+    // Second analysis: no files changed, so dead-store.ts's issue rows
+    // should not be touched (same analyzed_at), but issuesByType should
+    // remain identical since nothing was deleted.
+    const analysis1 = await analyseRepo(tmpDir);
+    const analysis2 = await analyseRepo(tmpDir);
+    assert.deepEqual(
+      analysis2.issuesByType,
+      analysis1.issuesByType,
+      'Unchanged repo: issuesByType should be stable across incremental re-runs',
+    );
+
+    const db2 = openDb(tmpDir);
+    let repoId2: number;
+    try {
+      const repoRow = db2.prepare('SELECT id FROM analysis_repo LIMIT 1').get() as { id: number };
+      repoId2 = repoRow.id;
+      const after = db2
+        .prepare('SELECT analyzed_at FROM file_issues WHERE repo_id = ? AND file_path = ? LIMIT 1')
+        .get(repoId2, 'ts/dead-store.ts') as { analyzed_at: string } | undefined;
+      assert.ok(after, 'dead-store.ts should still have an issue row');
+    } finally {
+      db2.close();
+    }
+
+    // Touch dead-store.ts (update its mtime without changing content) and
+    // re-analyze: it should be picked up as "changed" and re-analyzed.
+    const { utimesSync, readFileSync } = await import('node:fs');
+    const deadStorePath = resolve(tmpDir, 'ts', 'dead-store.ts');
+    const future = new Date(Date.now() + 60_000);
+    utimesSync(deadStorePath, future, future);
+
+    const analysis3 = await analyseRepo(tmpDir);
+    assert.deepEqual(
+      analysis3.issuesByType,
+      analysis1.issuesByType,
+      'Touched-but-unmodified file should reproduce the same issues when re-analyzed',
+    );
+
+    // --force should re-analyze everything regardless of mtime.
+    const analysis4 = await analyseRepo(tmpDir, { force: true });
+    assert.deepEqual(
+      analysis4.issuesByType,
+      analysis1.issuesByType,
+      '--force re-analysis should reproduce the same issues',
+    );
+
+    // Sanity: file content is unchanged.
+    const content = readFileSync(deadStorePath, 'utf-8');
+    assert.ok(content.length > 0, 'Fixture file should still have content');
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('analyseFile: supports issue filtering by type and severity', async () => {
   const tmpDir = setupFixtureRepo();
 

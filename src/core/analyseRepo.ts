@@ -4,9 +4,10 @@
  */
 
 import { resolve, relative } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { globby } from 'globby';
 import { openDb } from '../db/connection.js';
-import { findRepoById, findRepoByPath, updateRepoStatus, upsertFileIssues, upsertFileDependencies, countIssuesByType, countDependencies, recordAnalysisRun } from '../db/queries.js';
+import { findRepoById, findRepoByPath, updateRepoStatus, upsertFileIssues, upsertFileDependencies, countIssuesByType, countDependencies, recordAnalysisRun, getFileMtime, setFileMtime } from '../db/queries.js';
 import { runTypeScriptAnalyzer } from '../analyzers/typescript.js';
 import { runTsDependencyGraph } from '../analyzers/dependency-graph-ts.js';
 import { findCsprojFiles, runCsharpAnalyzer } from '../analyzers/csharp.js';
@@ -15,7 +16,7 @@ import type { AnalyseRepoOutput, RepoRecord } from '../types.js';
 
 export async function analyseRepo(
   repoIdOrPath: number | string,
-  _opts?: { force?: boolean },
+  opts?: { force?: boolean },
 ): Promise<AnalyseRepoOutput> {
   const startTime = new Date();
 
@@ -71,10 +72,59 @@ export async function analyseRepo(
 
     const errors: string[] = [];
 
-    // TypeScript/TSX analysis
+    // S1: incremental re-analysis. Compare each file's current mtime against
+    // the stored mtime; files whose mtime is unchanged since the last
+    // analysis are skipped for issue analysis (the expensive ESLint /
+    // dotnet-build work). `--force` bypasses this and re-analyzes everything.
+    // Dependency-graph analysis still runs over the full file set below,
+    // since it is comparatively cheap and graph-wide by nature; unchanged
+    // files retain their previously stored issues untouched (no
+    // delete-then-insert for them).
+    async function partitionByMtime(files: string[]): Promise<{ changed: string[]; unchanged: string[] }> {
+      if (opts?.force) {
+        return { changed: files, unchanged: [] };
+      }
+      const changed: string[] = [];
+      const unchanged: string[] = [];
+      for (const relPath of files) {
+        const absPath = resolve(repo.path, relPath);
+        let mtimeMs: number;
+        try {
+          mtimeMs = (await stat(absPath)).mtimeMs;
+        } catch {
+          // File disappeared between globby and stat; treat as changed so
+          // downstream analyzers handle the missing-file case.
+          changed.push(relPath);
+          continue;
+        }
+        const stored = getFileMtime(db, repo.id, relPath);
+        if (stored !== undefined && stored === mtimeMs) {
+          unchanged.push(relPath);
+        } else {
+          changed.push(relPath);
+        }
+      }
+      return { changed, unchanged };
+    }
+
+    async function recordMtimes(files: string[]): Promise<void> {
+      for (const relPath of files) {
+        try {
+          const mtimeMs = (await stat(resolve(repo.path, relPath))).mtimeMs;
+          setFileMtime(db, repo.id, relPath, mtimeMs);
+        } catch {
+          // File disappeared; nothing to record.
+        }
+      }
+    }
+
+    const { changed: tsFilesChanged } = await partitionByMtime(tsFiles);
+    const { changed: csFilesChanged } = await partitionByMtime(csFiles);
+
+    // TypeScript/TSX analysis (only re-run on changed files; S1)
     let tsIssuesCount = 0;
-    if (tsFiles.length > 0) {
-      const tsPaths = tsFiles.map((f) => resolve(repo.path, f));
+    if (tsFilesChanged.length > 0) {
+      const tsPaths = tsFilesChanged.map((f) => resolve(repo.path, f));
       const tsIssuesMap = await runTypeScriptAnalyzer(tsPaths, repo.path);
 
       // Upsert TS issues (normalize keys from absolute to repo-relative)
@@ -84,7 +134,12 @@ export async function analyseRepo(
         tsIssuesCount += issues.length;
       }
 
-      // TS dependency graph
+      await recordMtimes(tsFilesChanged);
+    }
+
+    // TS dependency graph: runs over the full TS file set (cheap, graph-wide).
+    if (tsFiles.length > 0) {
+      const tsPaths = tsFiles.map((f) => resolve(repo.path, f));
       const tsEdges = await runTsDependencyGraph(tsPaths, repo.path);
 
       // Group edges by sourceFile and upsert (normalize paths to repo-relative)
@@ -143,28 +198,38 @@ export async function analyseRepo(
       }
     }
 
-    // C# analysis
+    // C# analysis. `dotnet build` operates at the project level (not
+    // per-file), so S1's incremental skip is applied at that granularity:
+    // if no .cs file's mtime changed since the last analysis, skip the
+    // (expensive) dotnet build + SARIF parse entirely and keep the
+    // previously persisted issues as-is.
     let csIssuesCount = 0;
     if (csFiles.length > 0) {
       const csprojPaths = await findCsprojFiles(repo.path);
       if (csprojPaths.length > 0) {
-        const { issuesByFile, errors: csErrors } = await runCsharpAnalyzer(csprojPaths, repo.path);
+        if (csFilesChanged.length > 0) {
+          const { issuesByFile, errors: csErrors } = await runCsharpAnalyzer(csprojPaths, repo.path);
 
-        // Upsert C# issues (normalize keys if needed)
-        for (const [filePath, issues] of issuesByFile) {
-          // Normalize file path to repo-relative
-          const relPath = filePath.startsWith(repo.path)
-            ? relative(repo.path, filePath)
-            : filePath.startsWith('/')
-              ? filePath.slice(1)
-              : filePath;
+          // Upsert C# issues (normalize keys if needed)
+          for (const [filePath, issues] of issuesByFile) {
+            // Normalize file path to repo-relative
+            const relPath = filePath.startsWith(repo.path)
+              ? relative(repo.path, filePath)
+              : filePath.startsWith('/')
+                ? filePath.slice(1)
+                : filePath;
 
-          upsertFileIssues(db, repo.id, relPath, issues);
-          csIssuesCount += issues.length;
+            upsertFileIssues(db, repo.id, relPath, issues);
+            csIssuesCount += issues.length;
+          }
+
+          errors.push(...csErrors);
+          await recordMtimes(csFilesChanged);
         }
-
-        errors.push(...csErrors);
-      } else if (csFiles.length > 0) {
+        // else: no .cs file changed since last analysis — skip dotnet build
+        // entirely; previously persisted C# issues remain untouched and are
+        // reflected in issuesByType below via the DB-wide count.
+      } else {
         // C# files found but no .csproj
         errors.push('C# files found but no .csproj files detected — skipping C# analysis');
       }
