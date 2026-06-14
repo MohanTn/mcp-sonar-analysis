@@ -1,0 +1,157 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "SonarAnalyzer.CSharp",
+          "version": "10.27.0.140913",
+          "informationUri": "https://www.sonarsource.com/",
+          "rules": [
+            {
+              "id": "S1481",
+              "shortDescription": {
+                "text": "Unused local variables should be removed"
+              },
+              "fullDescription": {
+                "text": "If a local variable is declared but not used, it is dead code and should be removed."
+              },
+              "help": {
+                "text": "Remove this unused local variable."
+              },
+              "properties": {
+                "tags": ["code-smell", "cwe"],
+                "sonarType": "CODE_SMELL",
+                "sonarSeverity": "MINOR"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "S2486",
+              "shortDescription": {
+                "text": "Generic exceptions should not be caught"
+              },
+              "fullDescription": {
+                "text": "Catching overly broad exceptions masks problems and makes the code harder to maintain."
+              },
+              "help": {
+                "text": "Catch a more specific exception type or re-throw the exception."
+              },
+              "properties": {
+                "tags": ["bug", "cwe"],
+                "sonarType": "BUG",
+                "sonarSeverity": "MAJOR"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "S2589",
+              "shortDescription": {
+                "text": "Boolean expression always evaluates to a constant"
+              },
+              "fullDescription": {
+                "text": "If a boolean expression always evaluates to the same constant, it is dead code."
+              },
+              "help": {
+                "text": "Remove this condition or fix the logic."
+              },
+              "properties": {
+                "tags": ["bug"],
+                "sonarType": "BUG",
+                "sonarSeverity": "MAJOR"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "S1481",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "Remove this unused local variable 'unused'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Models.cs"
+                },
+                "region": {
+                  "startLine": 20,
+                  "startColumn": 23,
+                  "endLine": 20,
+                  "endColumn": 29
+                }
+              }
+            }
+          ],
+          "properties": {
+            "sonarType": "CODE_SMELL"
+          }
+        },
+        {
+          "ruleId": "S2486",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Catch a more specific exception type than 'Exception'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Models.cs"
+                },
+                "region": {
+                  "startLine": 31,
+                  "startColumn": 20,
+                  "endLine": 31,
+                  "endColumn": 29
+                }
+              }
+            }
+          ],
+          "properties": {
+            "sonarType": "BUG"
+          }
+        },
+        {
+          "ruleId": "S2589",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Change this condition so that it does not always evaluate to 'True'."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "Services.cs"
+                },
+                "region": {
+                  "startLine": 19,
+                  "startColumn": 18,
+                  "endLine": 19,
+                  "endColumn": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "sonarType": "BUG"
+          }
+        }
+      ]
+    }
+  ]
+}
