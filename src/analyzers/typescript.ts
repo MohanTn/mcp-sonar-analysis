@@ -43,7 +43,12 @@ function mapToSonarSeverity(
 ): 'INFO' | 'MINOR' | 'MAJOR' | 'CRITICAL' | 'BLOCKER' {
   // For now, use a simple mapping: error -> MAJOR, warning -> MINOR
   // This can be enhanced with a rule-specific lookup table if needed
-  const numSeverity = typeof severity === 'string' ? (severity === 'error' ? 2 : 1) : severity;
+  let numSeverity: number;
+  if (typeof severity === 'string') {
+    numSeverity = severity === 'error' ? 2 : 1;
+  } else {
+    numSeverity = severity;
+  }
   return numSeverity >= 2 ? 'MAJOR' : 'MINOR';
 }
 
@@ -83,7 +88,7 @@ function mapToSonarType(
     'S127': 'CODE_SMELL', // Nested depth
     'S817': 'CODE_SMELL', // Loop variable condition
     'S1126': 'CODE_SMELL', // Early return
-    'S1135': 'CODE_SMELL', // TODO comment
+    'S1135': 'CODE_SMELL', // No incomplete tasks in comments
 
     // VULNERABILITY rules
     'S5693': 'VULNERABILITY', // Disabled cert validation

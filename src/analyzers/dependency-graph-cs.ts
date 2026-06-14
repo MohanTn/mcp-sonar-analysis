@@ -17,7 +17,7 @@ import type { DependencyEdge } from '../types.js';
  * Handles both old-style (namespace Foo { }) and C# 10+ file-scoped (namespace Foo;) syntax.
  * Captures the namespace name(s).
  */
-const NAMESPACE_PATTERN = /^\s*namespace\s+([\w.]+)\s*[{;]/m;
+const NAMESPACE_PATTERN = /^[ \t]*namespace[ \t]+([\w.]+)[ \t]*[{;]/m;
 
 /**
  * Regex to extract using directives from C# code.
@@ -27,7 +27,7 @@ const NAMESPACE_PATTERN = /^\s*namespace\s+([\w.]+)\s*[{;]/m;
  *
  * Captures the imported namespace.
  */
-const USING_PATTERN = /^\s*using\s+(?!static\b)([\w.]+)\s*;/gm;
+const USING_PATTERN = /^[ \t]*using[ \t]+(?!static\b)([\w.]+)[ \t]*;/gm;
 
 /**
  * Find all .cs files in the given repo and build a map of namespace -> file.

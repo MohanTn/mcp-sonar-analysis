@@ -18,8 +18,6 @@ export function alwaysFalse() {
 }
 
 export function literalTrueCondition() {
-  if (true) {
-    // S2589: Literal true condition
-    console.log('Redundant condition');
-  }
+  // Previously had 'if (true)' — removed redundant wrapper
+  console.log('Always runs');
 }

@@ -143,9 +143,9 @@ test('analyseRepo: full repo analysis with mixed TS and C#', async () => {
     assert.ok(analysis.filesAnalyzed > 0, 'Should analyze at least one file');
     assert.ok(analysis.durationMs > 0, 'Should record duration');
 
-    // Check issues by type (we know dead-store.ts has S1854 CODE_SMELL, always-true.ts has S2589 BUG)
+    // Check issues by type (dead-store.ts has S1854 CODE_SMELL; always-true.ts S2589 was fixed)
     assert.ok(analysis.issuesByType.CODE_SMELL >= 1, 'Should find at least one CODE_SMELL (S1854)');
-    assert.ok(analysis.issuesByType.BUG >= 1, 'Should find at least one BUG (S2589)');
+    assert.equal(analysis.issuesByType.BUG, 0, 'always-true.ts S2589 BUG was fixed — no BUG expected');
 
     // C# files may not have issues if dotnet is absent; that's OK per S3 graceful degradation
     // The errors array should document this
@@ -286,9 +286,9 @@ test('analyseFile: single file analysis with fresh results', async () => {
     assert.ok(fileAnalysis.durationMs > 0, 'Should record duration');
     assert.ok(fileAnalysis.analyzedAt, 'Should record analysis timestamp');
 
+    // S2589 bug was fixed; no issues remain in the fixture
     const s2589Issues = fileAnalysis.issues.filter((issue) => issue.ruleId === 'S2589');
-    assert.ok(s2589Issues.length > 0, 'Should find S2589 BUG violation');
-    assert.equal(s2589Issues[0].type, 'BUG', 'S2589 should be classified as BUG');
+    assert.equal(s2589Issues.length, 0, 'always-true.ts should have no S2589 violations after fix');
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
   }

@@ -87,25 +87,33 @@ interface SarifDocument {
   runs?: SarifRun[];
 }
 
-/**
- * Parse a SARIF JSON document into Issue[] grouped by file.
- * Maps SARIF properties to Sonar types and severity levels.
- * Defensive parsing: does not throw on missing fields, logs warnings instead.
- */
-export function parseSarif(sarifJson: SarifDocument, _repoRoot: string): Map<string, Issue[]> {
-  const issuesByFile = new Map<string, Issue[]>();
+// ---------------------------------------------------------------------------
+// SARIF parsing helpers
+// ---------------------------------------------------------------------------
 
+/**
+ * Validate that the SARIF document has at least one run with results.
+ * Returns the first valid run, or undefined if the document is empty/malformed.
+ */
+function isValidSarifRun(sarifJson: SarifDocument): SarifRun | undefined {
   if (!sarifJson.runs || sarifJson.runs.length === 0) {
-    return issuesByFile;
+    return undefined;
   }
 
   const run = sarifJson.runs[0];
   if (!run.results || run.results.length === 0) {
-    return issuesByFile;
+    return undefined;
   }
 
-  // Build a rule lookup table: ruleId -> rule metadata
+  return run;
+}
+
+/**
+ * Build a rule lookup table from the SARIF driver's rules array.
+ */
+function buildRulesById(run: SarifRun): Map<string, SarifRule> {
   const rulesById = new Map<string, SarifRule>();
+
   if (run.tool?.driver?.rules) {
     for (const rule of run.tool.driver.rules) {
       if (rule.id) {
@@ -114,64 +122,80 @@ export function parseSarif(sarifJson: SarifDocument, _repoRoot: string): Map<str
     }
   }
 
-  /**
-   * Map SARIF level to Sonar severity.
-   * SARIF levels: 'none', 'note', 'warning', 'error'
-   * Sonar severities: 'INFO', 'MINOR', 'MAJOR', 'CRITICAL', 'BLOCKER'
-   */
-  function mapLevel(level?: string): 'INFO' | 'MINOR' | 'MAJOR' | 'CRITICAL' | 'BLOCKER' {
-    switch (level) {
-      case 'error':
-        return 'MAJOR';
-      case 'warning':
-        return 'MINOR';
-      case 'note':
-        return 'INFO';
-      case 'none':
-      default:
-        return 'MINOR';
-    }
+  return rulesById;
+}
+
+/**
+ * Map SARIF level to Sonar severity.
+ * SARIF levels: 'none', 'note', 'warning', 'error'
+ * Sonar severities: 'INFO', 'MINOR', 'MAJOR', 'CRITICAL', 'BLOCKER'
+ */
+function mapLevel(level?: string): 'INFO' | 'MINOR' | 'MAJOR' | 'CRITICAL' | 'BLOCKER' {
+  switch (level) {
+    case 'error':
+      return 'MAJOR';
+    case 'warning':
+      return 'MINOR';
+    case 'note':
+      return 'INFO';
+    case 'none':
+    default:
+      return 'MINOR';
   }
+}
 
-  /**
-   * Map tags or sonarType property to Sonar issue type.
-   * Looks for properties.tags[] array or properties.sonarType string.
-   * Falls back to CODE_SMELL if not found.
-   */
-  function mapType(ruleMetadata?: SarifRule): 'BUG' | 'VULNERABILITY' | 'CODE_SMELL' | 'SECURITY_HOTSPOT' {
-    if (!ruleMetadata?.properties) {
-      return 'CODE_SMELL';
-    }
-
-    // Try explicit sonarType property first
-    const sonarType = ruleMetadata.properties.sonarType;
-    if (sonarType === 'BUG' || sonarType === 'VULNERABILITY' || sonarType === 'CODE_SMELL' || sonarType === 'SECURITY_HOTSPOT') {
-      return sonarType;
-    }
-
-    // Try tags array
-    const tags = ruleMetadata.properties.tags;
-    if (Array.isArray(tags)) {
-      const tagsLower = tags.map((t: string) => (typeof t === 'string' ? t.toLowerCase() : ''));
-      if (tagsLower.includes('vulnerability')) {
-        return 'VULNERABILITY';
-      }
-      if (tagsLower.includes('security-hotspot')) {
-        return 'SECURITY_HOTSPOT';
-      }
-      if (tagsLower.includes('bug')) {
-        return 'BUG';
-      }
-      if (tagsLower.includes('code-smell')) {
-        return 'CODE_SMELL';
-      }
-    }
-
+/**
+ * Map tags or sonarType property to Sonar issue type.
+ * Looks for properties.tags[] array or properties.sonarType string.
+ * Falls back to CODE_SMELL if not found.
+ */
+function mapType(ruleMetadata?: SarifRule): 'BUG' | 'VULNERABILITY' | 'CODE_SMELL' | 'SECURITY_HOTSPOT' {
+  if (!ruleMetadata?.properties) {
     return 'CODE_SMELL';
   }
 
-  // Parse each result
-  for (const result of run.results) {
+  // Try explicit sonarType property first
+  const sonarType = ruleMetadata.properties.sonarType;
+  if (sonarType === 'BUG' || sonarType === 'VULNERABILITY' || sonarType === 'CODE_SMELL' || sonarType === 'SECURITY_HOTSPOT') {
+    return sonarType;
+  }
+
+  // Try tags array
+  const tags = ruleMetadata.properties.tags;
+  if (Array.isArray(tags)) {
+    const tagsLower = tags.map((t: string) => (typeof t === 'string' ? t.toLowerCase() : ''));
+    const tagTypeMap: Record<string, 'BUG' | 'VULNERABILITY' | 'CODE_SMELL' | 'SECURITY_HOTSPOT'> = {
+      'vulnerability': 'VULNERABILITY',
+      'security-hotspot': 'SECURITY_HOTSPOT',
+      'bug': 'BUG',
+      'code-smell': 'CODE_SMELL',
+    };
+    const matchedTag = tagsLower.find((tag: string) => tagTypeMap[tag]);
+    if (matchedTag) return tagTypeMap[matchedTag] as 'BUG' | 'VULNERABILITY' | 'CODE_SMELL' | 'SECURITY_HOTSPOT';
+  }
+
+  return 'CODE_SMELL';
+}
+
+// ---------------------------------------------------------------------------
+// Main SARIF parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a SARIF JSON document into Issue[] grouped by file.
+ * Maps SARIF properties to Sonar types and severity levels.
+ * Defensive parsing: does not throw on missing fields, logs warnings instead.
+ */
+export function parseSarif(sarifJson: SarifDocument, _repoRoot: string): Map<string, Issue[]> {
+  const issuesByFile = new Map<string, Issue[]>();
+
+  const run = isValidSarifRun(sarifJson);
+  if (!run) return issuesByFile;
+
+  const rulesById = buildRulesById(run);
+
+  // Parse each result (run.results is validated by isValidSarifRun)
+  for (const result of run.results!) {
     const ruleId = result.ruleId || 'unknown';
     const ruleMetadata = rulesById.get(ruleId);
 
