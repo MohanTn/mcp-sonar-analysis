@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.log
+.mcp-sonar-analysis/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.DS_Store
+*.tsbuildinfo
+
+# .NET build artifacts in fixtures
+test/fixtures/**/bin/
+test/fixtures/**/obj/
+*.sarif
