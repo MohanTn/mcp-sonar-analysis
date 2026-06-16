@@ -64,6 +64,68 @@ export function readRegistry(homeDirOverride?: string): RegistryFile {
 }
 
 /**
+ * Find a registry entry by its globally-unique repoId.
+ * Returns undefined if not found.
+ */
+export function findEntryByRepoId(repoId: number, homeDirOverride?: string): RegistryEntry | undefined {
+  const registry = readRegistry(homeDirOverride);
+  return registry.repos.find((r) => r.repoId === repoId);
+}
+
+/**
+ * Find a registry entry by its canonical path.
+ * Returns undefined if not found.
+ */
+export function findEntryByPath(repoPath: string, homeDirOverride?: string): RegistryEntry | undefined {
+  const registry = readRegistry(homeDirOverride);
+  return registry.repos.find((r) => r.path === repoPath);
+}
+
+/**
+ * Compute the next globally-unique repoId by finding the maximum existing
+ * repoId in the registry and adding 1. Returns 1 if the registry is empty.
+ */
+export function getNextGlobalRepoId(homeDirOverride?: string): number {
+  const registry = readRegistry(homeDirOverride);
+  if (registry.repos.length === 0) return 1;
+  let maxId = 0;
+  for (const repo of registry.repos) {
+    if (repo.repoId > maxId) maxId = repo.repoId;
+  }
+  return maxId + 1;
+}
+
+/**
+ * Remove a single entry from the registry by its canonical path.
+ * Reads, modifies, and writes the entire registry.json file.
+ * Never throws to the caller; logs errors to stderr and returns.
+ *
+ * @param repoPath - The canonical path of the repo to remove.
+ * @param homeDirOverride - Optional override for the dashboard home directory (used in tests).
+ */
+export function removeRegistryEntry(repoPath: string, homeDirOverride?: string): void {
+  try {
+    const homeDir = getDashboardHomeDir(homeDirOverride);
+    const registryPath = join(homeDir, REGISTRY_FILE_NAME);
+
+    const registry = readRegistry(homeDirOverride);
+
+    // Remove entry matching the path
+    const newRepos = registry.repos.filter((repo) => repo.path !== repoPath);
+    if (newRepos.length === registry.repos.length) {
+      // No entry removed — repo wasn't in the registry
+      return;
+    }
+
+    registry.repos = newRepos;
+    writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf-8');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Warning: failed to remove registry entry: ${message}`);
+  }
+}
+
+/**
  * Upsert a single entry into the registry (by path).
  * Reads, modifies, and writes the entire registry.json file.
  * Never throws to the caller; logs errors to stderr and returns.

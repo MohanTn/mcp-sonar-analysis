@@ -12,6 +12,7 @@ import {
   getDashboardHomeDir,
   readRegistry,
   upsertRegistryEntry,
+  removeRegistryEntry,
 } from '../src/dashboard/registry.js';
 import type { RegistryEntry } from '../src/types.js';
 
@@ -186,6 +187,66 @@ test('upsertRegistryEntry: multiple entries with different paths all persist', (
   assert.ok(registry.repos.some((r) => r.path === '/path/a'));
   assert.ok(registry.repos.some((r) => r.path === '/path/b'));
   assert.ok(registry.repos.some((r) => r.path === '/path/c'));
+});
+
+test('removeRegistryEntry: removes an existing entry by path', () => {
+  const testHome = join(tmpDir, 'remove-entry');
+  const entry1: RegistryEntry = {
+    repoId: 1,
+    path: '/path/to-remove',
+    name: 'to-remove',
+    dbPath: '/path/to-remove/.mcp-sonar-analysis/db.sqlite',
+    registeredAt: '2026-06-14T10:00:00.000Z',
+  };
+  const entry2: RegistryEntry = {
+    repoId: 2,
+    path: '/path/to-keep',
+    name: 'to-keep',
+    dbPath: '/path/to-keep/.mcp-sonar-analysis/db.sqlite',
+    registeredAt: '2026-06-14T10:01:00.000Z',
+  };
+
+  upsertRegistryEntry(entry1, testHome);
+  upsertRegistryEntry(entry2, testHome);
+
+  // Verify both exist before removal
+  let registry = readRegistry(testHome);
+  assert.equal(registry.repos.length, 2, 'Should have 2 entries before removal');
+
+  removeRegistryEntry('/path/to-remove', testHome);
+
+  registry = readRegistry(testHome);
+  assert.equal(registry.repos.length, 1, 'Should have 1 entry after removal');
+  assert.equal(registry.repos[0].path, '/path/to-keep', 'Remaining entry should be the one we kept');
+});
+
+test('removeRegistryEntry: non-existent path is a no-op', () => {
+  const testHome = join(tmpDir, 'remove-noop');
+  const entry: RegistryEntry = {
+    repoId: 1,
+    path: '/path/exists',
+    name: 'exists',
+    dbPath: '/path/exists/.mcp-sonar-analysis/db.sqlite',
+    registeredAt: '2026-06-14T10:00:00.000Z',
+  };
+
+  upsertRegistryEntry(entry, testHome);
+
+  // Remove a non-existent path — should not throw or change anything
+  removeRegistryEntry('/path/does-not-exist', testHome);
+
+  const registry = readRegistry(testHome);
+  assert.equal(registry.repos.length, 1, 'Entry should still be present');
+  assert.equal(registry.repos[0].path, '/path/exists');
+});
+
+test('removeRegistryEntry: empty registry is a no-op', () => {
+  const testHome = join(tmpDir, 'remove-empty');
+  // Registry file doesn't exist yet — remove should be a no-op
+  removeRegistryEntry('/anything', testHome);
+
+  const registry = readRegistry(testHome);
+  assert.deepEqual(registry, { repos: [] }, 'Registry should still be empty');
 });
 
 test('upsertRegistryEntry never throws to caller (swallows errors and logs warning)', () => {

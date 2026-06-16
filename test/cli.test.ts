@@ -248,6 +248,34 @@ describe('CLI and MCP server', () => {
     assert(typeof output.analyzedAt === 'string');
   });
 
+  test('unregister-repo: removes a repo from the registry, unregister idempotent', async () => {
+    // Create a new fixture, register it, unregister it, verify unregister succeeds
+    const unregFixtureDir = await setupFixture();
+    try {
+      // Register
+      const regResult = await runCommand('register-repo', unregFixtureDir, '--name', 'unreg-test');
+      assert.equal(regResult.exitCode, 0);
+      const regOutput = JSON.parse(regResult.stdout);
+      assert.ok(regOutput.repoId > 0);
+
+      // Unregister
+      const unregResult = await runCommand('unregister-repo', unregFixtureDir);
+      assert.equal(unregResult.exitCode, 0, `stderr: ${unregResult.stderr}`);
+      const unregOutput = JSON.parse(unregResult.stdout);
+      assert.equal(unregOutput.success, true);
+      assert.equal(unregOutput.path, unregFixtureDir);
+
+      // Second unregister should also succeed (idempotent)
+      const unregResult2 = await runCommand('unregister-repo', unregFixtureDir);
+      assert.equal(unregResult2.exitCode, 0);
+      const unregOutput2 = JSON.parse(unregResult2.stdout);
+      assert.equal(unregOutput2.success, true);
+    } finally {
+      // Cleanup: unregister if still present
+      await runCommand('unregister-repo', unregFixtureDir);
+    }
+  });
+
   test('serve: responds to tools/list with exactly 4 tools matching the contracts', async () => {
     const childProcess = spawn('node', [resolve('./dist/cli.js'), 'serve'], {
       stdio: ['pipe', 'pipe', 'pipe'],

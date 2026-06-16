@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "sonar-analysis": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "mcp-sonar-analysis-cli",
+        "serve"
+      ],
+      "env": {}
+    }
+  }
+}

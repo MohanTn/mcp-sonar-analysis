@@ -52,12 +52,24 @@ export function findRepoById(db: Database.Database, id: number): RepoRecord | un
  * Idempotent insert: if a repo with this path already exists, returns it
  * unchanged (alreadyRegistered semantics are computed by the caller in
  * src/core/register.ts, which calls findRepoByPath first).
+ *
+ * @param explicitId - Optional globally-unique repoId to use. When provided,
+ *   the row is inserted with this specific id instead of relying on
+ *   AUTOINCREMENT. This ensures repoIds are globally unique across all
+ *   per-repo databases.
  */
-export function insertRepo(db: Database.Database, path: string, name?: string): RepoRecord {
-  const result = db
-    .prepare('INSERT INTO analysis_repo (path, name) VALUES (?, ?)')
-    .run(path, name ?? null);
-  const created = findRepoById(db, result.lastInsertRowid as number);
+export function insertRepo(db: Database.Database, path: string, name?: string, explicitId?: number): RepoRecord {
+  let result;
+  if (explicitId !== undefined) {
+    result = db
+      .prepare('INSERT INTO analysis_repo (id, path, name) VALUES (?, ?, ?)')
+      .run(explicitId, path, name ?? null);
+  } else {
+    result = db
+      .prepare('INSERT INTO analysis_repo (path, name) VALUES (?, ?)')
+      .run(path, name ?? null);
+  }
+  const created = findRepoById(db, explicitId ?? (result.lastInsertRowid as number));
   if (!created) {
     throw new Error(`Failed to read back inserted repo for path: ${path}`);
   }
@@ -355,6 +367,26 @@ export function countDependencies(db: Database.Database, repoId: number): number
     .prepare('SELECT COUNT(*) as cnt FROM file_dependencies WHERE repo_id = ?')
     .get(repoId) as { cnt: number };
   return row.cnt;
+}
+
+/** Returns all dependency edges for a repo (for building the full dependency graph). */
+export function getAllDependencies(db: Database.Database, repoId: number): DependencyEdge[] {
+  const rows = db
+    .prepare('SELECT * FROM file_dependencies WHERE repo_id = ?')
+    .all(repoId) as FileDependencyRow[];
+  return rows.map(toDependencyEdge);
+}
+
+/** Returns the set of all files that participate in any dependency edge (source or target). */
+export function getAllSourceFiles(db: Database.Database, repoId: number): string[] {
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT source_file AS file_path FROM file_dependencies WHERE repo_id = ?
+       UNION
+       SELECT DISTINCT imported_file FROM file_dependencies WHERE repo_id = ? AND imported_file IS NOT NULL`,
+    )
+    .all(repoId, repoId) as Array<{ file_path: string }>;
+  return rows.map((r) => r.file_path);
 }
 
 // ---------------------------------------------------------------------------

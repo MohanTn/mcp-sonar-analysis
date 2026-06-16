@@ -7,10 +7,7 @@ import { resolve, relative } from 'node:path';
 import { stat } from 'node:fs/promises';
 import type Database from 'better-sqlite3';
 import { globby } from 'globby';
-import { openDb } from '../db/connection.js';
 import {
-  findRepoById,
-  findRepoByPath,
   updateRepoStatus,
   upsertFileIssues,
   upsertFileDependencies,
@@ -25,47 +22,8 @@ import { runTsDependencyGraph } from '../analyzers/dependency-graph-ts.js';
 import { findCsprojFiles, runCsharpAnalyzer } from '../analyzers/csharp.js';
 import { runCsDependencyGraph } from '../analyzers/dependency-graph-cs.js';
 import { isPathInside } from '../util/paths.js';
-import type { AnalyseRepoOutput, RepoRecord } from '../types.js';
-
-// ---------------------------------------------------------------------------
-// Helper: resolve or open the database and look up the repo record
-// ---------------------------------------------------------------------------
-
-async function resolveRepoRecord(
-  repoIdOrPath: number | string,
-): Promise<{ db: Database.Database; repo: RepoRecord }> {
-  const dbPath = typeof repoIdOrPath === 'string' ? resolve(repoIdOrPath) : process.cwd();
-  let db = openDb(dbPath);
-  let repo: RepoRecord;
-
-  try {
-    if (typeof repoIdOrPath === 'number') {
-      const found = findRepoById(db, repoIdOrPath);
-      if (!found) {
-        throw new Error(
-          `Repo not found with ID: ${repoIdOrPath}. Make sure to call register_repo first or run from the registered repo directory.`,
-        );
-      }
-      repo = found;
-    } else {
-      const canonicalPath = resolve(repoIdOrPath);
-      const found = findRepoByPath(db, canonicalPath);
-      if (!found) {
-        throw new Error('Repo not registered. Call register_repo first.');
-      }
-      repo = found;
-      if (canonicalPath !== dbPath) {
-        db.close();
-        db = openDb(canonicalPath);
-      }
-    }
-  } catch (error) {
-    db.close();
-    throw error;
-  }
-
-  return { db, repo };
-}
+import { resolveRepo } from './resolveRepo.js';
+import type { AnalyseRepoOutput } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Helpers: incremental analysis (S1) — mtime-based file partitioning
@@ -324,7 +282,7 @@ export async function analyseRepo(
   opts?: { force?: boolean },
 ): Promise<AnalyseRepoOutput> {
   const startTime = new Date();
-  const { db, repo } = await resolveRepoRecord(repoIdOrPath);
+  const { db, repo } = resolveRepo(repoIdOrPath);
 
   try {
     updateRepoStatus(db, repo.id, 'in_progress');

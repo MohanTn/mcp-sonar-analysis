@@ -1,12 +1,20 @@
 /**
  * Register a repository for analysis.
  * Idempotent: registering an already-registered path returns the existing repo record.
+ *
+ * repoIds are globally unique across all repos, assigned from the global
+ * registry (~/.mcp-sonar-analysis/registry.json). The per-repo SQLite DB
+ * stores the same global ID so foreign-key relationships stay consistent.
  */
 
 import { resolve } from 'node:path';
 import { openDb, getDbPath } from '../db/connection.js';
 import { findRepoByPath, insertRepo } from '../db/queries.js';
-import { upsertRegistryEntry } from '../dashboard/registry.js';
+import {
+  upsertRegistryEntry,
+  findEntryByPath,
+  getNextGlobalRepoId,
+} from '../dashboard/registry.js';
 import type { RegisterRepoOutput } from '../types.js';
 
 export async function registerRepo(repoPath: string, name?: string): Promise<RegisterRepoOutput> {
@@ -17,14 +25,16 @@ export async function registerRepo(repoPath: string, name?: string): Promise<Reg
   const db = openDb(canonicalPath);
 
   try {
-    // Check if already registered
+    // Check if already registered in the local DB
     const existing = findRepoByPath(db, canonicalPath);
     if (existing) {
-      // Upsert to global registry (self-healing for pre-feature repos)
+      // Self-heal: ensure the registry entry matches the local DB (which
+      // is the source of truth). If the registry has a stale repoId for
+      // this path, the upsert corrects it.
       upsertRegistryEntry({
         repoId: existing.id,
         path: existing.path,
-        name: existing.name,
+        name: existing.name ?? name ?? null,
         dbPath: getDbPath(canonicalPath),
         registeredAt: existing.registeredAt,
       });
@@ -38,8 +48,19 @@ export async function registerRepo(repoPath: string, name?: string): Promise<Reg
       };
     }
 
-    // New registration
-    const created = insertRepo(db, canonicalPath, name);
+    // ---- New registration ----
+    // Check the global registry first: if this path was previously
+    // registered but the local DB was deleted, reuse the old repoId.
+    const existingRegistryEntry = findEntryByPath(canonicalPath);
+    let newRepoId: number;
+    if (existingRegistryEntry) {
+      newRepoId = existingRegistryEntry.repoId;
+    } else {
+      newRepoId = getNextGlobalRepoId();
+    }
+
+    // Insert with the globally-unique repoId
+    const created = insertRepo(db, canonicalPath, name, newRepoId);
 
     // Upsert to global registry
     upsertRegistryEntry({

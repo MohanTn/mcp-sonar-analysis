@@ -2,15 +2,17 @@
 
 /**
  * CLI for mcp-sonar-analysis.
- * Subcommands: register-repo, analyse-repo, get-file-analysis, analyse-file, serve.
+ * Subcommands: register-repo, unregister-repo, analyse-repo, get-file-analysis, analyse-file, serve, dashboard.
  */
 
+import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { registerRepo } from './core/register.js';
 import { analyseRepo } from './core/analyseRepo.js';
 import { getFileAnalysis } from './core/getFileAnalysis.js';
 import { analyseFile } from './core/analyseFile.js';
 import { startServer } from './mcp/server.js';
+import { removeRegistryEntry } from './dashboard/registry.js';
 
 const program = new Command();
 program.name('mcp-sonar-analysis-cli').version('1.0.0');
@@ -38,6 +40,21 @@ program
     try {
       const result = await registerRepo(path, options.name);
       console.log(JSON.stringify(result));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      outputError(message);
+    }
+  });
+
+// unregister-repo <path>
+program
+  .command('unregister-repo <path>')
+  .description('Remove a repository from the global registry (does not delete analysis data on disk)')
+  .action(async (path) => {
+    try {
+      const canonicalPath = resolve(path);
+      removeRegistryEntry(canonicalPath);
+      console.log(JSON.stringify({ success: true, path: canonicalPath }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       outputError(message);

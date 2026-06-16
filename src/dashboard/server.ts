@@ -8,7 +8,7 @@ import * as http from 'node:http';
 import { URL } from 'node:url';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { handleListRepos, handleRepoSummary, handleFileAnalysis } from './api.js';
+import { handleListRepos, handleRepoSummary, handleFileAnalysis, handleRepoDependencies, handleDeleteRepo } from './api.js';
 
 /**
  * Creates an HTTP server with request handler.
@@ -28,9 +28,13 @@ export function createDashboardServer(): http.Server {
 
         if (parts[1] === 'summary' && parts.length === 2) {
           await handleRepoSummary(req, res, decodedPath);
+        } else if (parts[1] === 'dependencies' && parts.length === 2) {
+          await handleRepoDependencies(req, res, decodedPath);
         } else if (parts[1] === 'files' && parts.length >= 3) {
           const filePath = decodeURIComponent(parts.slice(2).join('/'));
           await handleFileAnalysis(req, res, decodedPath, filePath);
+        } else if (req.method === 'DELETE' && parts.length === 1) {
+          await handleDeleteRepo(req, res, decodedPath);
         } else {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'not found' }));

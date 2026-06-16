@@ -50,21 +50,31 @@ export async function findCsprojFiles(repoRoot: string): Promise<string[]> {
  * SARIF result object structure (minimal schema for parsing).
  * See: https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html
  */
+interface SarifLocation {
+  /** dotnet build format: file path in resultFile.uri */
+  resultFile?: {
+    uri?: string;
+    region?: SarifRegion;
+  };
+  /** Standard SARIF format: file path in physicalLocation.artifactLocation.uri */
+  physicalLocation?: {
+    artifactLocation?: { uri?: string };
+    region?: SarifRegion;
+  };
+}
+
+interface SarifRegion {
+  startLine?: number;
+  startColumn?: number;
+  endLine?: number;
+  endColumn?: number;
+}
+
 interface SarifResult {
   ruleId?: string;
   level?: 'none' | 'note' | 'warning' | 'error';
   message?: { text?: string };
-  locations?: Array<{
-    physicalLocation?: {
-      artifactLocation?: { uri?: string };
-      region?: {
-        startLine?: number;
-        startColumn?: number;
-        endLine?: number;
-        endColumn?: number;
-      };
-    };
-  }>;
+  locations?: SarifLocation[];
   properties?: Record<string, any>;
 }
 
@@ -182,11 +192,55 @@ function mapType(ruleMetadata?: SarifRule): 'BUG' | 'VULNERABILITY' | 'CODE_SMEL
 // ---------------------------------------------------------------------------
 
 /**
+ * Extract the file path and region from a SARIF location.
+ * Handles both dotnet build format (resultFile.uri) and standard SARIF
+ * format (physicalLocation.artifactLocation.uri).
+ * Returns `undefined` if no file path can be determined.
+ */
+function extractLocation(location: SarifLocation, repoRoot: string): { filePath: string; region?: SarifRegion } | undefined {
+  let uri: string | undefined;
+  let region: SarifRegion | undefined;
+
+  // dotnet build format: resultFile
+  if (location.resultFile?.uri) {
+    uri = location.resultFile.uri;
+    region = location.resultFile.region;
+  } else if (location.physicalLocation?.artifactLocation?.uri) {
+    // Standard SARIF format
+    uri = location.physicalLocation.artifactLocation.uri;
+    region = location.physicalLocation.region;
+  }
+
+  if (!uri) return undefined;
+
+  // Strip file:// protocol prefix (dotnet builds produce file:///absolute/path)
+  let filePath = uri;
+  if (filePath.startsWith('file://')) {
+    filePath = filePath.slice('file://'.length);
+  }
+
+  // Make the path repo-relative if it's absolute and inside the repo
+  if (filePath.startsWith('/')) {
+    const resolved = resolve(repoRoot);
+    if (filePath.startsWith(resolved + '/')) {
+      filePath = filePath.slice(resolved.length + 1);
+    } else if (filePath.startsWith(repoRoot + '/')) {
+      filePath = filePath.slice(repoRoot.length + 1);
+    } else {
+      // Strip leading slash for non-repo-relative absolute paths
+      filePath = filePath.slice(1);
+    }
+  }
+
+  return { filePath, region };
+}
+
+/**
  * Parse a SARIF JSON document into Issue[] grouped by file.
  * Maps SARIF properties to Sonar types and severity levels.
  * Defensive parsing: does not throw on missing fields, logs warnings instead.
  */
-export function parseSarif(sarifJson: SarifDocument, _repoRoot: string): Map<string, Issue[]> {
+export function parseSarif(sarifJson: SarifDocument, repoRoot: string): Map<string, Issue[]> {
   const issuesByFile = new Map<string, Issue[]>();
 
   const run = isValidSarifRun(sarifJson);
@@ -204,19 +258,13 @@ export function parseSarif(sarifJson: SarifDocument, _repoRoot: string): Map<str
       continue;
     }
 
-    const location = result.locations[0];
-    const artifactUri = location.physicalLocation?.artifactLocation?.uri;
-    if (!artifactUri) {
+    const extracted = extractLocation(result.locations[0], repoRoot);
+    if (!extracted) {
       continue;
     }
 
-    // Resolve artifact URI to repo-relative path
-    // For now, treat it as already repo-relative (from dotnet build)
-    const filePath = artifactUri.startsWith('/') ? artifactUri.slice(1) : artifactUri;
-
-    const region = location.physicalLocation?.region;
-    const line = region?.startLine;
-    const column = region?.startColumn;
+    const line = extracted.region?.startLine;
+    const column = extracted.region?.startColumn;
 
     const issue: Issue = {
       ruleId,
@@ -228,10 +276,10 @@ export function parseSarif(sarifJson: SarifDocument, _repoRoot: string): Map<str
     };
 
     // Group by file
-    if (!issuesByFile.has(filePath)) {
-      issuesByFile.set(filePath, []);
+    if (!issuesByFile.has(extracted.filePath)) {
+      issuesByFile.set(extracted.filePath, []);
     }
-    issuesByFile.get(filePath)!.push(issue);
+    issuesByFile.get(extracted.filePath)!.push(issue);
   }
 
   return issuesByFile;

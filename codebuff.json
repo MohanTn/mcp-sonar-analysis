@@ -1,0 +1,16 @@
+{
+  "fileChangeHooks": [
+    {
+      "filePattern": "*.ts",
+      "command": "mcp-sonar-analysis-cli analyse-file \"$PROJECT_DIR\" \"$FILE_PATH\" && mcp-sonar-analysis-cli get-file-analysis \"$PROJECT_DIR\" \"$FILE_PATH\""
+    },
+    {
+      "filePattern": "*.tsx",
+      "command": "mcp-sonar-analysis-cli analyse-file \"$PROJECT_DIR\" \"$FILE_PATH\" && mcp-sonar-analysis-cli get-file-analysis \"$PROJECT_DIR\" \"$FILE_PATH\""
+    },
+    {
+      "filePattern": "*.cs",
+      "command": "mcp-sonar-analysis-cli analyse-file \"$PROJECT_DIR\" \"$FILE_PATH\" && mcp-sonar-analysis-cli get-file-analysis \"$PROJECT_DIR\" \"$FILE_PATH\""
+    }
+  ]
+}
